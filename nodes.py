@@ -1,6 +1,6 @@
 import torch
-import numpy as np
-from PIL import Image
+from rembg import new_session, remove
+from torchvision.transforms import v2
 
 class AnyType(str):
     def __eq__(self, _) -> bool:
@@ -279,45 +279,73 @@ class ACE_ImageConstrain:
         }
 
     RETURN_TYPES = ("IMAGE",)
-    OUTPUT_IS_LIST = (True,)
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
 
     def execute(self, images, max_width, max_height, min_width, min_height, crop_if_required):
-        results = []
-        for image in images:
-            i = 255. * image.cpu().numpy()
-            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8)).convert("RGB")
+        images = images.permute([0,3,1,2])
+        output = []
 
-            current_width, current_height = img.size
+        for image in images:
+            image = v2.ToPILImage()(image)
+
+            current_width, current_height = image.size
             aspect_ratio = current_width / current_height
 
-            constrained_width = max(min(current_width, min_width), max_width)
-            constrained_height = max(min(current_height, min_height), max_height)
+            target_width = min(max(current_width, min_width), max_width)
+            target_height = min(max(current_height, min_height), max_height)
 
-            if constrained_width / constrained_height > aspect_ratio:
-                constrained_width = max(int(constrained_height * aspect_ratio), min_width)
-                if crop_if_required:
-                    constrained_height = int(current_height / (current_width / constrained_width))
+            if crop_if_required:
+                if target_width / target_height < aspect_ratio:
+                    resize_width, resize_height = int(target_height * aspect_ratio), int(target_height)
+                else:
+                    resize_width, resize_height = int(target_width), int(target_width / aspect_ratio)
+                image = v2.Resize((resize_height, resize_width))(image)
+                image = v2.CenterCrop((target_height, target_width))(image)
             else:
-                constrained_height = max(int(constrained_width / aspect_ratio), min_height)
-                if crop_if_required:
-                    constrained_width = int(current_width / (current_height / constrained_height))
+                if target_width / target_height > aspect_ratio:
+                    target_width, target_height = int(target_height * aspect_ratio), int(target_height)
+                else:
+                    target_width, target_height = int(target_width), int(target_width / aspect_ratio)
+                image = v2.Resize((max(target_height, min_height), max(target_width, min_width)))(image)
 
-            resized_image = img.resize((constrained_width, constrained_height), Image.LANCZOS)
+            output.append(v2.ToTensor()(image))
 
-            if crop_if_required and (constrained_width > max_width or constrained_height > max_height):
-                left = max((constrained_width - max_width) // 2, 0)
-                top = max((constrained_height - max_height) // 2, 0)
-                right = min(constrained_width, max_width) + left
-                bottom = min(constrained_height, max_height) + top
-                resized_image = resized_image.crop((left, top, right, bottom))
-
-            resized_image = np.array(resized_image).astype(np.float32) / 255.0
-            resized_image = torch.from_numpy(resized_image)[None,]
-            results.append(resized_image)
+        output = torch.stack(output, dim=0)
+        output = output.permute([0,2,3,1])
                 
-        return (results,)
+        return (output[:, :, :, :3],)
+    
+class ACE_ImageRemoveBackground:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "model": (["u2net", "u2netp", "u2net_human_seg", "u2net_cloth_seg", "silueta", "isnet-general-use", "isnet-anime", "sam"],),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE","MASK",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, images, model):
+        rembg_session = new_session(model, providers=['CPUExecutionProvider'])
+
+        images = images.permute([0,3,1,2])
+        output = []
+        
+        for image in images:
+            image = v2.ToPILImage()(image)
+            image = remove(image, session=rembg_session)
+            output.append(v2.ToTensor()(image))
+
+        output = torch.stack(output, dim=0)
+        output = output.permute([0,2,3,1])
+        mask = output[:, :, :, 3] if output.shape[3] == 4 else torch.ones_like(output[:, :, :, 0])
+
+        return(output[:, :, :, :3], mask,)
     
 
 NODE_CLASS_MAPPINGS = {
@@ -334,6 +362,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_TextSelector"          : ACE_TextSelector,
     "ACE_TextToResolution"      : ACE_TextToResolution,
     "ACE_ImageConstrain"        : ACE_ImageConstrain,
+    "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -350,4 +379,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_TextSelector"          : "🅐 Text Selector",
     "ACE_TextToResolution"      : "🅐 Text To Resolution",
     "ACE_ImageConstrain"        : "🅐 Image Constrain",
+    "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
 }
