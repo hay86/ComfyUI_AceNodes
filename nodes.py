@@ -1,4 +1,8 @@
+import os
 import torch
+import folder_paths
+
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from rembg import new_session, remove
 from torchvision.transforms import v2
 
@@ -255,7 +259,7 @@ class ACE_TextToResolution:
         }
 
     RETURN_TYPES = ("INT","INT",)
-    RETURN_NAMES = ("WIDTH", "HEIGHT",)
+    RETURN_NAMES = ("WIDTH","HEIGHT",)
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
     
@@ -263,6 +267,43 @@ class ACE_TextToResolution:
         width, height = text.strip().split(" ")[0].split("x")
         width, height = int(width), int(height)
         return (width,height,)
+    
+class ACE_TextTranslate:
+    def __init__(self):
+        self.model_checkpoint = None
+        self.tokenizer = None
+        self.model = None
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        models_dir = os.path.join(folder_paths.models_dir, 'prompt_generator')
+        models = [x for x in os.listdir(models_dir) if x.startswith('opus-mt-')]
+        return {
+            "required":{
+                "text": ("STRING", {"default": '', "multiline": True}),
+                "model": (sorted(models),),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+    
+    def execute(self, text, model):
+        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', model)
+
+        if self.model_checkpoint != model_checkpoint:
+            self.model_checkpoint = model_checkpoint
+            self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint).eval()
+
+        with torch.no_grad():
+            texts = [x.strip() for x in text.split("\n") if x.strip()]
+            encoded = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+            sequences = self.model.generate(**encoded)
+            translation = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
+            translation_text = "\n".join([x.rstrip('.') for x in translation])
+            return (translation_text,)
 
 class ACE_ImageConstrain:
     @classmethod
@@ -317,6 +358,10 @@ class ACE_ImageConstrain:
         return (output[:, :, :, :3],)
     
 class ACE_ImageRemoveBackground:
+    def __init__(self):
+        U2NET_HOME=os.path.join(folder_paths.models_dir, "rembg")
+        os.environ["U2NET_HOME"] = U2NET_HOME
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -363,6 +408,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_TextToResolution"      : ACE_TextToResolution,
     "ACE_ImageConstrain"        : ACE_ImageConstrain,
     "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
+    "ACE_TextTranslate"         : ACE_TextTranslate,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -380,4 +426,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_TextToResolution"      : "🅐 Text To Resolution",
     "ACE_ImageConstrain"        : "🅐 Image Constrain",
     "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
+    "ACE_TextTranslate"         : "🅐 Text Translate"
 }
