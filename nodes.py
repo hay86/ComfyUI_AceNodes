@@ -276,12 +276,41 @@ class ACE_TextTranslate:
 
     @classmethod
     def INPUT_TYPES(cls):
-        models_dir = os.path.join(folder_paths.models_dir, 'prompt_generator')
-        models = [x for x in os.listdir(models_dir) if x.startswith('opus-mt-')]
+        supported_lang = [
+            'en',  # 英语
+            'zh',  # 中文
+            'es',  # 西班牙语
+            'hi',  # 印度语
+            'ar',  # 阿拉伯语
+            'pt',  # 葡萄牙语
+            'ru',  # 俄语
+            'ja',  # 日语
+            'de',  # 德语
+            'fr',  # 法语
+            'ko',  # 韩语
+            'it',  # 意大利语
+            'nl',  # 荷兰语
+            'tr',  # 土耳其语
+            'sv',  # 瑞典语
+            'pl',  # 波兰语
+            'th',  # 泰语
+            'vi',  # 越南语
+            'id',  # 印尼语
+            'el',  # 希腊语
+            'cs',  # 捷克语
+            'da',  # 丹麦语
+            'fi',  # 芬兰语
+            'hu',  # 匈牙利语
+            'no',  # 挪威语
+            'ro',  # 罗马尼亚语
+            'sk',  # 斯洛伐克语
+            'uk',  # 乌克兰语
+        ]
         return {
             "required":{
                 "text": ("STRING", {"default": '', "multiline": True}),
-                "model": (sorted(models),),
+                "from_lang": (supported_lang, {"default": 'en'}),
+                "to_lang": (supported_lang, {"default": 'en'}),
             }
         }
 
@@ -289,8 +318,16 @@ class ACE_TextTranslate:
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
     
-    def execute(self, text, model):
-        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', model)
+    def execute(self, text, from_lang, to_lang):
+        if from_lang == to_lang:
+            return (text,)
+        
+        model_name = f'opus-mt-{from_lang}-{to_lang}'
+        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', model_name)
+
+        if not os.path.exists(model_checkpoint):
+            from huggingface_hub import snapshot_download
+            snapshot_download(repo_id=f'Helsinki-NLP/{model_name}', local_dir=model_checkpoint, local_dir_use_symlinks=False)
 
         if self.model_checkpoint != model_checkpoint:
             self.model_checkpoint = model_checkpoint
