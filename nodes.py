@@ -1,10 +1,12 @@
 import os
 import torch
+import requests
 import folder_paths
 
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from rembg import new_session, remove
 from torchvision.transforms import v2
+from bs4 import BeautifulSoup
 
 class AnyType(str):
     def __eq__(self, _) -> bool:
@@ -341,6 +343,67 @@ class ACE_TextTranslate:
             translation = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
             translation_text = "\n".join([x.rstrip('.') for x in translation])
             return (translation_text,)
+        
+class ACE_TextGoogleTranslate:
+    @classmethod
+    def INPUT_TYPES(cls):
+        supported_lang = [
+            'en',  # 英语
+            'zh',  # 中文
+            'es',  # 西班牙语
+            'hi',  # 印度语
+            'ar',  # 阿拉伯语
+            'pt',  # 葡萄牙语
+            'ru',  # 俄语
+            'ja',  # 日语
+            'de',  # 德语
+            'fr',  # 法语
+            'ko',  # 韩语
+            'it',  # 意大利语
+            'nl',  # 荷兰语
+            'tr',  # 土耳其语
+            'sv',  # 瑞典语
+            'pl',  # 波兰语
+            'th',  # 泰语
+            'vi',  # 越南语
+            'id',  # 印尼语
+            'el',  # 希腊语
+            'cs',  # 捷克语
+            'da',  # 丹麦语
+            'fi',  # 芬兰语
+            'hu',  # 匈牙利语
+            'no',  # 挪威语
+            'ro',  # 罗马尼亚语
+            'sk',  # 斯洛伐克语
+            'uk',  # 乌克兰语
+        ]
+        return {
+            "required":{
+                "text": ("STRING", {"default": '', "multiline": True}),
+                "from_lang": (supported_lang, {"default": 'en'}),
+                "to_lang": (supported_lang, {"default": 'en'}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+    
+    def execute(self, text, from_lang, to_lang):
+        if from_lang == to_lang:
+            return (text,)
+        
+        response = requests.get(f'https://translate.google.com/m?sl={from_lang}&tl={to_lang}&q={text}')
+
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            element = soup.find('div', {"class": "result-container"})
+
+            if element:
+                translation_text = element.get_text(strip=True)
+                return (translation_text,)
+
+        return (text,)
 
 class ACE_ImageConstrain:
     @classmethod
@@ -446,6 +509,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageConstrain"        : ACE_ImageConstrain,
     "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
     "ACE_TextTranslate"         : ACE_TextTranslate,
+    "ACE_TextGoogleTranslate"   : ACE_TextGoogleTranslate,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -463,5 +527,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_TextToResolution"      : "🅐 Text To Resolution",
     "ACE_ImageConstrain"        : "🅐 Image Constrain",
     "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
-    "ACE_TextTranslate"         : "🅐 Text Translate"
+    "ACE_TextTranslate"         : "🅐 Text Translate",
+    "ACE_TextGoogleTranslate"   : "🅐 Text Google Translate",
 }

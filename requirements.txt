@@ -3,3 +3,5 @@ torchvision
 numpy
 pillow
 rembg
+requests
+beautifulsoup4
