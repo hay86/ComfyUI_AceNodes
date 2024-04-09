@@ -14,3 +14,7 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Text Preview
 - Text Selector
 - Text To Resolution
+- Image Constrain
+- Image Remove Background
+- Text Translate
+- Text Google Translate
