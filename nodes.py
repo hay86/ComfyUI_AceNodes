@@ -1,7 +1,10 @@
 import os
+import re
 import torch
+import hashlib
 import requests
 import folder_paths
+import soundfile as sf
 
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from rembg import new_session, remove
@@ -492,6 +495,115 @@ class ACE_ImageRemoveBackground:
 
         return(output[:, :, :, :3], mask,)
     
+class ACE_AudioLoad:
+    @classmethod
+    def INPUT_TYPES(s):
+        audio_extensions = ["wav", "mp3", "flac"]
+        input_dir = folder_paths.get_input_directory()
+        files = []
+        for f in os.listdir(input_dir):
+            if os.path.isfile(os.path.join(input_dir, f)):
+                file_parts = f.lower().split('.')
+                if len(file_parts) > 1 and (file_parts[-1] in audio_extensions):
+                    files.append(f)
+        return {
+            "required": {
+                "audio": (sorted(files),),
+            },
+        }
+
+    RETURN_TYPES = (any, "INT",)
+    RETURN_NAMES = ("AUDIO", "SAMPLE_RATE",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, audio):
+        file = folder_paths.get_annotated_filepath(audio)
+        ext = file.lower().split('.')[-1] if '.' in file else 'null'
+
+        if ext in ["wav", "mp3", "flac"]:
+            audio_samples, sample_rate =sf.read(file)
+        else:
+            raise Exception(f'File format "{ext}" is not supported')
+
+        return (list(audio_samples), sample_rate)
+    
+    @classmethod
+    def IS_CHANGED(self, audio, **kwargs):
+        audio_path = folder_paths.get_annotated_filepath(audio)
+        m = hashlib.sha256()
+        with open(audio_path, 'rb') as f:
+            m.update(f.read())
+        return m.digest().hex()
+
+    @classmethod
+    def VALIDATE_INPUTS(self, audio, **kwargs):
+        if not folder_paths.exists_annotated_filepath(audio):
+            return "Invalid audio file: {}".format(audio)
+        return True
+    
+class ACE_AudioSave:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": (any, {"forceInput": True}),
+                "sample_rate": ("INT", {"forceInput": True}),
+                "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "extension": (["wav", "mp3", "flac"], {"default": "wav"}),
+            }
+        }
+    
+    RETURN_TYPES = ()
+    OUTPUT_NODE = True
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, audio, sample_rate, filename_prefix, extension):
+        subfolder = os.path.dirname(os.path.normpath(filename_prefix))
+        filename = os.path.basename(os.path.normpath(filename_prefix))
+
+        output_dir = folder_paths.get_output_directory()
+        full_output_folder = os.path.join(output_dir, subfolder)
+
+        max_counter = 0
+        matcher = re.compile(f"{re.escape(filename)}_(\d+)\D*\..+", re.IGNORECASE)
+        for existing_file in os.listdir(full_output_folder):
+            match = matcher.fullmatch(existing_file)
+            if match:
+                max_counter = max(max_counter, int(match.group(1)))
+        counter = max_counter + 1
+
+        audio_path = os.path.join(full_output_folder, f"{filename}_{counter:05}.{extension}")
+        sf.write(audio_path, audio, sample_rate)
+
+        return ()
+    
+class ACE_AudioPlay:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "mode": (["always", "on empty queue"], {}),
+                "volume": ("FLOAT", {"min": 0, "max": 1, "step": 0.1, "default": 0.5}),
+                "audio": (any, {"forceInput": True}),
+                "sample_rate": ("INT", {"forceInput": True}),
+            }
+        }
+
+    INPUT_IS_LIST = True
+    RETURN_TYPES = (any,)
+    OUTPUT_NODE = True
+    OUTPUT_IS_LIST = (True,)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def IS_CHANGED(self, **kwargs):
+        return float("NaN")
+
+    def execute(self, mode, volume, audio, sample_rate):
+        return {"ui": {"audio": audio, "sample_rate": sample_rate}, "result": (any,)}
+    
 
 NODE_CLASS_MAPPINGS = {
     "ACE_Integer"               : ACE_Integer,
@@ -510,6 +622,9 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
     "ACE_TextTranslate"         : ACE_TextTranslate,
     "ACE_TextGoogleTranslate"   : ACE_TextGoogleTranslate,
+    "ACE_AudioLoad"             : ACE_AudioLoad,
+    "ACE_AudioSave"             : ACE_AudioSave,
+    "ACE_AudioPlay"             : ACE_AudioPlay,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -529,4 +644,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
     "ACE_TextTranslate"         : "🅐 Text Translate",
     "ACE_TextGoogleTranslate"   : "🅐 Text Google Translate",
+    "ACE_AudioLoad"             : "🅐 Audio Load",
+    "ACE_AudioSave"             : "🅐 Audio Save",
+    "ACE_AudioPlay"             : "🅐 Audio Play",
 }
