@@ -18,3 +18,6 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Image Remove Background
 - Text Translate
 - Text Google Translate
+- Audio Load
+- Audio Save
+- Audio Play
