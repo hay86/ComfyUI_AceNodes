@@ -8,8 +8,15 @@ import soundfile as sf
 
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from rembg import new_session, remove
-from torchvision.transforms import v2
+from torchvision.transforms.v2 import ToTensor, ToPILImage, Resize, CenterCrop
 from bs4 import BeautifulSoup
+
+from .core.image.colorfix import adain_color_fix, wavelet_color_fix
+
+
+##################################
+# Global Variables and Functions #
+##################################
 
 class AnyType(str):
     def __eq__(self, _) -> bool:
@@ -20,6 +27,13 @@ class AnyType(str):
 
 any = AnyType("*")
 
+to_tensor = ToTensor()
+to_image = ToPILImage()
+
+ 
+###########################
+# ACE Nodes of Primitives #
+###########################
 
 class ACE_Integer:
     @classmethod
@@ -84,6 +98,11 @@ class ACE_Seed:
 
     def execute(self, seed):
         return (seed,)
+    
+
+#####################
+# ACE Nodes of Text #
+#####################
     
 class ACE_TextConcatenate:
     @ classmethod
@@ -407,6 +426,11 @@ class ACE_TextGoogleTranslate:
                 return (translation_text,)
 
         return (text,)
+    
+
+######################
+# ACE Nodes of Image #
+######################
 
 class ACE_ImageConstrain:
     @classmethod
@@ -431,7 +455,7 @@ class ACE_ImageConstrain:
         output = []
 
         for image in images:
-            image = v2.ToPILImage()(image)
+            image = to_image(image)
 
             current_width, current_height = image.size
             aspect_ratio = current_width / current_height
@@ -444,16 +468,16 @@ class ACE_ImageConstrain:
                     resize_width, resize_height = int(target_height * aspect_ratio), int(target_height)
                 else:
                     resize_width, resize_height = int(target_width), int(target_width / aspect_ratio)
-                image = v2.Resize((resize_height, resize_width))(image)
-                image = v2.CenterCrop((target_height, target_width))(image)
+                image = Resize((resize_height, resize_width))(image)
+                image = CenterCrop((target_height, target_width))(image)
             else:
                 if target_width / target_height > aspect_ratio:
                     target_width, target_height = int(target_height * aspect_ratio), int(target_height)
                 else:
                     target_width, target_height = int(target_width), int(target_width / aspect_ratio)
-                image = v2.Resize((max(target_height, min_height), max(target_width, min_width)))(image)
+                image = Resize((max(target_height, min_height), max(target_width, min_width)))(image)
 
-            output.append(v2.ToTensor()(image))
+            output.append(to_tensor(image))
 
         output = torch.stack(output, dim=0)
         output = output.permute([0,2,3,1])
@@ -485,15 +509,58 @@ class ACE_ImageRemoveBackground:
         output = []
         
         for image in images:
-            image = v2.ToPILImage()(image)
+            image = to_image(image)
             image = remove(image, session=rembg_session)
-            output.append(v2.ToTensor()(image))
+            output.append(to_tensor(image))
 
         output = torch.stack(output, dim=0)
         output = output.permute([0,2,3,1])
         mask = output[:, :, :, 3] if output.shape[3] == 4 else torch.ones_like(output[:, :, :, 0])
 
         return(output[:, :, :, :3], mask,)
+    
+class ACE_ImageColorFix:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "color_map_images": ("IMAGE",),
+                "color_fix": (
+                    [
+                        "Wavelet",
+                        "AdaIN",
+                    ],
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, images, color_map_images, color_fix):
+        color_fix_func = (
+            wavelet_color_fix if color_fix == "Wavelet" else adain_color_fix
+        )
+
+        images = images.permute([0,3,1,2])
+        color_map_images = color_map_images.permute([0,3,1,2])
+        output = []
+
+        for image, color_map_image in zip(images, color_map_images):
+            result_image = color_fix_func(to_image(image), to_image(color_map_image))
+            output.append(to_tensor(result_image))
+
+        output = torch.stack(output, dim=0)
+        output = output.permute([0,2,3,1])
+                
+        return (output[:, :, :, :3],)
+    
+
+######################
+# ACE Nodes of Audio #
+######################
     
 class ACE_AudioLoad:
     @classmethod
@@ -605,11 +672,16 @@ class ACE_AudioPlay:
         return {"ui": {"audio": audio, "sample_rate": sample_rate}, "result": (any,)}
     
 
+#########################
+# ACE Nodes for ComfyUI #
+#########################
+
 NODE_CLASS_MAPPINGS = {
     "ACE_Integer"               : ACE_Integer,
     "ACE_Float"                 : ACE_Float,
     "ACE_Text"                  : ACE_Text,
     "ACE_Seed"                  : ACE_Seed,
+
     "ACE_TextConcatenate"       : ACE_TextConcatenate,
     "ACE_TextInputSwitch2Way"   : ACE_TextInputSwitch2Way,
     "ACE_TextInputSwitch4Way"   : ACE_TextInputSwitch4Way,
@@ -618,10 +690,13 @@ NODE_CLASS_MAPPINGS = {
     "ACE_TextPreview"           : ACE_TextPreview,
     "ACE_TextSelector"          : ACE_TextSelector,
     "ACE_TextToResolution"      : ACE_TextToResolution,
-    "ACE_ImageConstrain"        : ACE_ImageConstrain,
-    "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
     "ACE_TextTranslate"         : ACE_TextTranslate,
     "ACE_TextGoogleTranslate"   : ACE_TextGoogleTranslate,
+
+    "ACE_ImageConstrain"        : ACE_ImageConstrain,
+    "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
+    "ACE_ImageColorFix"         : ACE_ImageColorFix,
+
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
     "ACE_AudioPlay"             : ACE_AudioPlay,
@@ -632,6 +707,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_Float"                 : "🅐 Float",
     "ACE_Text"                  : "🅐 Text",
     "ACE_Seed"                  : "🅐 Seed",
+
     "ACE_TextConcatenate"       : "🅐 Text Concatenate",
     "ACE_TextInputSwitch2Way"   : "🅐 Text Input Switch (2 way)",
     "ACE_TextInputSwitch4Way"   : "🅐 Text Input Switch (4 way)",
@@ -640,10 +716,13 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_TextPreview"           : "🅐 Text Preview",
     "ACE_TextSelector"          : "🅐 Text Selector",
     "ACE_TextToResolution"      : "🅐 Text To Resolution",
-    "ACE_ImageConstrain"        : "🅐 Image Constrain",
-    "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
     "ACE_TextTranslate"         : "🅐 Text Translate",
     "ACE_TextGoogleTranslate"   : "🅐 Text Google Translate",
+
+    "ACE_ImageConstrain"        : "🅐 Image Constrain",
+    "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
+    "ACE_ImageColorFix"         : "🅐 Image Color Fix",
+
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
     "ACE_AudioPlay"             : "🅐 Audio Play",
