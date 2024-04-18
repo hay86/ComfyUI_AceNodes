@@ -6,7 +6,7 @@ import requests
 import folder_paths
 import soundfile as sf
 
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModel, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from rembg import new_session, remove
 from torchvision.transforms.v2 import ToTensor, ToPILImage, Resize, CenterCrop
 from bs4 import BeautifulSoup
@@ -297,6 +297,7 @@ class ACE_TextTranslate:
         self.model_checkpoint = None
         self.tokenizer = None
         self.model = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -346,21 +347,21 @@ class ACE_TextTranslate:
         if from_lang == to_lang:
             return (text,)
         
-        model_name = f'opus-mt-{from_lang}-{to_lang}'
-        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', model_name)
+        model_id = f'Helsinki-NLP/opus-mt-{from_lang}-{to_lang}'
+        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', os.path.basename(model_id))
 
         if not os.path.exists(model_checkpoint):
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=f'Helsinki-NLP/{model_name}', local_dir=model_checkpoint, local_dir_use_symlinks=False)
+            snapshot_download(repo_id=model_id, local_dir=model_checkpoint, local_dir_use_symlinks=False)
 
         if self.model_checkpoint != model_checkpoint:
             self.model_checkpoint = model_checkpoint
             self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint).eval()
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint).to(self.device).eval()
 
         with torch.no_grad():
             texts = [x.strip() for x in text.split("\n") if x.strip()]
-            encoded = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+            encoded = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
             sequences = self.model.generate(**encoded)
             translation = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
             translation_text = "\n".join([x.rstrip('.') for x in translation])
@@ -556,6 +557,69 @@ class ACE_ImageColorFix:
         output = output.permute([0,2,3,1])
                 
         return (output[:, :, :, :3],)
+
+class ACE_ImageQA:
+    def __init__(self):
+        self.model_checkpoint = None
+        self.tokenizer = None
+        self.model = None
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.bf16_support = torch.cuda.is_available() and torch.cuda.get_device_capability(self.device)[0] >= 8
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "text": ("STRING", {"default": '', "multiline": True}),
+                "model": (["moondream2", "MiniCPM-V-2"],),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, image, text, model):
+        if model == "moondream2":
+            model_id = "vikhyatk/moondream2"
+        elif model == "MiniCPM-V-2":
+            model_id = "openbmb/MiniCPM-V-2"
+        else:
+            raise Exception(f'Model "{model}" is not supported')
+        
+        model_checkpoint = os.path.join(folder_paths.models_dir, 'prompt_generator', os.path.basename(model_id))
+
+        if not os.path.exists(model_checkpoint):
+            from huggingface_hub import snapshot_download
+            snapshot_download(repo_id=model_id, local_dir=model_checkpoint, local_dir_use_symlinks=False)
+
+        if self.model_checkpoint != model_checkpoint:
+            self.model_checkpoint = model_checkpoint
+            if model == "moondream2":
+                self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, trust_remote_code=True)
+                self.model = AutoModelForCausalLM.from_pretrained(model_checkpoint, trust_remote_code=True)
+                self.model = self.model.to(self.device).eval()
+            elif model == "MiniCPM-V-2":
+                self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, trust_remote_code=True)
+                self.model = AutoModel.from_pretrained(model_checkpoint, trust_remote_code=True, torch_dtype=torch.bfloat16)
+                self.model = self.model.to(self.device, dtype=torch.bfloat16 if self.bf16_support else torch.float16).eval()
+
+        with torch.no_grad():
+            image = to_image(image.permute([0,3,1,2])[0]).convert("RGB")
+
+            if model == "moondream2":
+                encoded_image = self.model.encode_image(image)
+                result = self.model.answer_question(encoded_image, text, self.tokenizer)
+            elif model == "MiniCPM-V-2":
+                result, context, _ = self.model.chat(
+                    image=image,
+                    msgs=[{'role': 'user', 'content': text}],
+                    context=None,
+                    tokenizer=self.tokenizer,
+                    sampling=True
+                )
+            return (result,)
     
 
 ######################
@@ -696,6 +760,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageConstrain"        : ACE_ImageConstrain,
     "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
     "ACE_ImageColorFix"         : ACE_ImageColorFix,
+    "ACE_ImageQA"               : ACE_ImageQA,
 
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
@@ -722,6 +787,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageConstrain"        : "🅐 Image Constrain",
     "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
     "ACE_ImageColorFix"         : "🅐 Image Color Fix",
+    "ACE_ImageQA"               : "🅐 Image Question Answering",
 
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
