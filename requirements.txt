@@ -5,3 +5,6 @@ pillow
 rembg
 requests
 beautifulsoup4
+huggingface_hub
+soundfile
+transformers
