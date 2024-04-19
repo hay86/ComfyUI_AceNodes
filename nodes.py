@@ -10,6 +10,7 @@ from transformers import AutoTokenizer, AutoModel, AutoModelForSeq2SeqLM, AutoMo
 from rembg import new_session, remove
 from torchvision.transforms.v2 import ToTensor, ToPILImage, Resize, CenterCrop
 from bs4 import BeautifulSoup
+from itertools import zip_longest
 
 from .core.image.colorfix import adain_color_fix, wavelet_color_fix
 
@@ -549,7 +550,9 @@ class ACE_ImageColorFix:
         color_map_images = color_map_images.permute([0,3,1,2])
         output = []
 
-        for image, color_map_image in zip(images, color_map_images):
+        last_element = images[-1] if len(images) < len(color_map_images) else color_map_images[-1]
+        
+        for image, color_map_image in zip_longest(images, color_map_images, fillvalue=last_element):
             result_image = color_fix_func(to_image(image), to_image(color_map_image))
             output.append(to_tensor(result_image))
 
