@@ -24,6 +24,8 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Image Remove Background
 - Image Color Fix
 - Image Question Answering
+- Image Load From Cloud
+- Image Save To Cloud
 
 ## Audio Nodes
 - Audio Load

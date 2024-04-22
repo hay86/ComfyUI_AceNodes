@@ -8,3 +8,5 @@ beautifulsoup4
 huggingface_hub
 soundfile
 transformers
+boto3
+oss2
