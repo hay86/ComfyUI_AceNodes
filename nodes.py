@@ -757,6 +757,23 @@ class ACE_ImageSaveToCloud:
             raise Exception(f'Cloud "{cloud}" is not supported')
 
         return { "ui": { "images": results } }
+    
+class ACE_ImageGetSize:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            }
+        }
+
+    RETURN_TYPES = ("INT", "INT",)
+    RETURN_NAMES = ("WIDTH","HEIGHT",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, image):
+        return (image.shape[2], image.shape[1],)
 
 
 ######################
@@ -873,6 +890,40 @@ class ACE_AudioPlay:
         return {"ui": {"audio": audio, "sample_rate": sample_rate}, "result": (any,)}
     
 
+#######################
+# ACE Nodes of Others #
+#######################
+    
+class ACE_ExpressionEval:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "value": ("STRING", {"multiline": False, "default": ""}),
+            },
+            "optional": {
+                "a": (any, {"default": ""}),
+                "b": (any, {"default": ""}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING","INT","FLOAT",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, value, a='', b=''):
+        result = eval(value, {'a':a, 'b':b})
+        try:
+            result_int = round(int(result))
+        except:
+            result_int = 0
+        try:
+            result_float = round(float(result), 4)
+        except:
+            result_float = 0
+        return (str(result), result_int, result_float)
+
+
 #########################
 # ACE Nodes for ComfyUI #
 #########################
@@ -900,10 +951,13 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageQA"               : ACE_ImageQA,
     "ACE_ImageLoadFromCloud"    : ACE_ImageLoadFromCloud,
     "ACE_ImageSaveToCloud"      : ACE_ImageSaveToCloud,
+    "ACE_ImageGetSize"          : ACE_ImageGetSize,
 
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
     "ACE_AudioPlay"             : ACE_AudioPlay,
+
+    "ACE_Expression_Eval"       : ACE_ExpressionEval,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -929,8 +983,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageQA"               : "🅐 Image Question Answering",
     "ACE_ImageLoadFromCloud"    : "🅐 Image Load From Cloud",
     "ACE_ImageSaveToCloud"      : "🅐 Image Save To Cloud",
+    "ACE_ImageGetSize"          : "🅐 Image Get Size",
 
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
     "ACE_AudioPlay"             : "🅐 Audio Play",
+
+    "ACE_Expression_Eval"       : "🅐 Expression Eval",
 }
