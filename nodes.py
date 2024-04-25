@@ -46,7 +46,7 @@ class ACE_Integer:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "int": ("INT", {"default": 0}),
+                "int": ("INT", {"default": 0, "min": -0xffffffffffffffff, "max": 0xffffffffffffffff, "step": 1}),
             }
         }
 
@@ -62,7 +62,7 @@ class ACE_Float:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "float": ("FLOAT", {"default": 0.0}),
+                "float": ("FLOAT", {"default": 0.0, "min": -0xffffffffffffffff, "max": 0xffffffffffffffff, "step": 0.001}),
             }
         }
 
