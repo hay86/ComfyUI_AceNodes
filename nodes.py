@@ -811,7 +811,7 @@ class ACE_AudioLoad:
         else:
             raise Exception(f'File format "{ext}" is not supported')
 
-        return (list(audio_samples), sample_rate)
+        return (audio_samples.tolist(), sample_rate)
     
     @classmethod
     def IS_CHANGED(self, audio, **kwargs):
