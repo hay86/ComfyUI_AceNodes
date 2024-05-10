@@ -16,6 +16,8 @@ from bs4 import BeautifulSoup
 from itertools import zip_longest
 from PIL import Image, ImageSequence, ImageOps
 from datetime import datetime
+from retinaface import RetinaFace
+from insightface.app import FaceAnalysis
 
 from .core.image.colorfix import adain_color_fix, wavelet_color_fix
 
@@ -774,6 +776,91 @@ class ACE_ImageGetSize:
 
     def execute(self, image):
         return (image.shape[2], image.shape[1],)
+    
+class ACE_ImageFaceCrop:
+    def __init__(self):
+        self.model_name = None
+        self.model = None
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "model": (["retinaface", "insightface"],),
+                "crop_width": ("INT", {"default": 512, "min": 1, "max": 16384, "step": 1}),
+                "crop_height": ("INT", {"default": 512, "min": 1, "max": 16384, "step": 1}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE","MASK",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, image, model, crop_width, crop_height):
+        image = to_image(image.permute([0,3,1,2])[0]).convert("RGB")
+        np_image = np.array(image)
+
+        face_bboxes = []
+        face_images = []
+        face_masks = []
+
+        if model == 'retinaface':
+            if self.model_name != model:
+                self.model_name = model
+                self.model = RetinaFace.build_model()
+
+            faces = RetinaFace.detect_faces(np_image, model=self.model)
+            if faces:
+                faces = sorted(faces.values(), key=lambda x: -x['score'])
+                for face in faces:
+                    face_bboxes.append(face['facial_area'])
+        elif model == 'insightface':
+            if self.model_name != model:
+                self.model_name = model
+                self.model = FaceAnalysis(providers=['CUDAExecutionProvider', 'CPUExecutionProvider'], root=os.path.join(folder_paths.models_dir, 'insightface'))
+                self.model.prepare(ctx_id=0)
+
+            faces = self.model.get(np_image)
+            if faces:
+                for face in faces:
+                    face_bboxes.append(face.bbox.astype(int))
+        else:
+            raise Exception(f'Model "{model}" is not supported')
+        
+        if face_bboxes:
+            face_bboxes = sorted(face_bboxes, key=lambda x: -(x[2]-x[0])*(x[3]-x[1])) # sort by area
+            for bbox in face_bboxes:
+                x1, y1, x2, y2 = bbox
+                width, height = x2-x1, y2-y1
+                if width / height > crop_width / crop_height:
+                    new_height = int(width * crop_height / crop_width)
+                    y_offset = int((new_height - height) / 2)
+                    y1, y2 = y1-y_offset, y2+y_offset
+                else:
+                    new_width = int(height * crop_width / crop_height)
+                    x_offset = int((new_width - width) / 2)
+                    x1, x2 = x1-x_offset, x2+x_offset
+                
+                face_image = image.crop((x1, y1, x2, y2)).resize((crop_width, crop_height), Image.LANCZOS)
+                face_images.append(to_tensor(face_image))
+
+                face_mask = torch.zeros(image.size)
+                face_mask[max(x1,0):min(x2,image.size[0]-1), max(y1,0):min(y2,image.size[0]-1)] = 1
+                face_masks.append(face_mask)
+        else:
+            face_image = torch.zeros((3, crop_width, crop_height))
+            face_images.append(to_tensor(face_image))
+        
+            face_mask = torch.zeros(image.size)
+            face_masks.append(face_mask)
+
+        output_images = torch.stack(face_images, dim=0)
+        output_images = output_images.permute([0,2,3,1])
+        output_masks = torch.stack(face_masks, dim=0)
+        output_masks = output_masks.permute([0,2,1])
+        
+        return (output_images, output_masks,)
 
 
 ######################
@@ -952,6 +1039,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageLoadFromCloud"    : ACE_ImageLoadFromCloud,
     "ACE_ImageSaveToCloud"      : ACE_ImageSaveToCloud,
     "ACE_ImageGetSize"          : ACE_ImageGetSize,
+    "ACE_ImageFaceCrop"         : ACE_ImageFaceCrop,
 
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
@@ -984,6 +1072,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageLoadFromCloud"    : "🅐 Image Load From Cloud",
     "ACE_ImageSaveToCloud"      : "🅐 Image Save To Cloud",
     "ACE_ImageGetSize"          : "🅐 Image Get Size",
+    "ACE_ImageFaceCrop"         : "🅐 Image Face Crop",
 
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",

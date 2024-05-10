@@ -10,3 +10,5 @@ soundfile
 transformers
 boto3
 oss2
+insightface
+retina-face

@@ -27,6 +27,7 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Image Load From Cloud
 - Image Save To Cloud
 - Image Get Size
+- Image Face Crop
 
 ## Audio Nodes
 - Audio Load
