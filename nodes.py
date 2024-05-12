@@ -793,7 +793,8 @@ class ACE_ImageFaceCrop:
             }
         }
 
-    RETURN_TYPES = ("IMAGE","MASK",)
+    RETURN_TYPES = ("IMAGE","MASK","BOOLEAN",)
+    RETURN_NAMES = ("IMAGE","MASK","FACE_DETECTED",)
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
 
@@ -812,8 +813,7 @@ class ACE_ImageFaceCrop:
 
             faces = RetinaFace.detect_faces(np_image, model=self.model)
             if faces:
-                faces = sorted(faces.values(), key=lambda x: -x['score'])
-                for face in faces:
+                for face in faces.values():
                     face_bboxes.append(face['facial_area'])
         elif model == 'insightface':
             if self.model_name != model:
@@ -860,7 +860,7 @@ class ACE_ImageFaceCrop:
         output_masks = torch.stack(face_masks, dim=0)
         output_masks = output_masks.permute([0,2,1])
         
-        return (output_images, output_masks,)
+        return (output_images, output_masks, len(face_bboxes)>0)
 
 
 ######################
@@ -1009,6 +1009,24 @@ class ACE_ExpressionEval:
         except:
             result_float = 0
         return (str(result), result_int, result_float)
+    
+class ACE_AnyInputSwitchBool:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "bool": (any,),
+                "any_if_true": (any,),
+                "any_if_false": (any,),
+            },
+        }
+
+    RETURN_TYPES = (any,)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, bool, any_if_true, any_if_false):
+        return (any_if_true if bool else any_if_false,)
 
 
 #########################
@@ -1046,6 +1064,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_AudioPlay"             : ACE_AudioPlay,
 
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
+    "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1079,4 +1098,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_AudioPlay"             : "🅐 Audio Play",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
+    "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",
 }
