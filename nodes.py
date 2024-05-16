@@ -2,24 +2,12 @@ import os
 import re
 import torch
 import hashlib
-import requests
 import folder_paths
-import soundfile as sf
 import numpy as np
-import boto3
-import oss2
 
-from transformers import AutoTokenizer, AutoModel, AutoModelForSeq2SeqLM, AutoModelForCausalLM
-from rembg import new_session, remove
-from torchvision.transforms.v2 import ToTensor, ToPILImage, Resize, CenterCrop
-from bs4 import BeautifulSoup
-from itertools import zip_longest
-from PIL import Image, ImageSequence, ImageOps
+from PIL import Image
 from datetime import datetime
-from retinaface import RetinaFace
-from insightface.app import FaceAnalysis
-
-from .core.image.colorfix import adain_color_fix, wavelet_color_fix
+from torchvision.transforms.v2 import ToTensor, ToPILImage
 
 
 ##################################
@@ -364,6 +352,7 @@ class ACE_TextTranslate:
 
         if self.model_checkpoint != model_checkpoint:
             self.model_checkpoint = model_checkpoint
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
             self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
             self.model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint).to(self.device).eval()
 
@@ -424,9 +413,11 @@ class ACE_TextGoogleTranslate:
         if from_lang == to_lang:
             return (text,)
         
+        import requests
         response = requests.get(f'https://translate.google.com/m?sl={from_lang}&tl={to_lang}&q={text}')
 
         if response.status_code == 200:
+            from bs4 import BeautifulSoup
             soup = BeautifulSoup(response.text, "html.parser")
             element = soup.find('div', {"class": "result-container"})
 
@@ -463,6 +454,7 @@ class ACE_ImageConstrain:
         images = images.permute([0,3,1,2])
         output = []
 
+        from torchvision.transforms.v2 import Resize, CenterCrop
         for image in images:
             image = to_image(image)
 
@@ -495,15 +487,18 @@ class ACE_ImageConstrain:
     
 class ACE_ImageRemoveBackground:
     def __init__(self):
-        U2NET_HOME=os.path.join(folder_paths.models_dir, "rembg")
-        os.environ["U2NET_HOME"] = U2NET_HOME
+        self.model_dir = os.path.join(folder_paths.models_dir, "rembg")
+        os.environ["U2NET_HOME"] = self.model_dir 
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.model_checkpoint = None
+        self.model = None
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "images": ("IMAGE",),
-                "model": (["u2net", "u2netp", "u2net_human_seg", "u2net_cloth_seg", "silueta", "isnet-general-use", "isnet-anime", "sam"],),
+                "model": (["briarmbg", "u2net", "u2netp", "u2net_human_seg", "u2net_cloth_seg", "silueta", "isnet-general-use", "isnet-anime", "sam"],),
             },
         }
 
@@ -512,21 +507,78 @@ class ACE_ImageRemoveBackground:
     CATEGORY = "Ace Nodes"
 
     def execute(self, images, model):
-        rembg_session = new_session(model, providers=['CPUExecutionProvider'])
+        if model == "briarmbg":
+            model_checkpoint = os.path.join(self.model_dir, 'briarmbg.pth')
 
-        images = images.permute([0,3,1,2])
-        output = []
-        
-        for image in images:
-            image = to_image(image)
-            image = remove(image, session=rembg_session)
-            output.append(to_tensor(image))
+            from .core.image.briarmbg import BriaRMBG
+            if self.model_checkpoint != model_checkpoint:
+                if not os.path.exists(model_checkpoint):
+                    from huggingface_hub import hf_hub_download
+                    hf_hub_download(repo_id='briaai/RMBG-1.4', filename='model.pth', local_dir=self.model_dir)
+                    os.rename(os.path.join(self.model_dir, 'model.pth'), model_checkpoint)
+                
+                self.model_checkpoint = model_checkpoint
+                self.model = BriaRMBG()
+                self.model.load_state_dict(torch.load(self.model_checkpoint, map_location=self.device))
+                self.model.to(self.device)
+                self.model.eval() 
 
-        output = torch.stack(output, dim=0)
-        output = output.permute([0,2,3,1])
-        mask = output[:, :, :, 3] if output.shape[3] == 4 else torch.ones_like(output[:, :, :, 0])
+            images = images.permute([0,3,1,2])
+            processed_images = []
+            processed_masks = []
 
-        return(output[:, :, :, :3], mask,)
+            import torch.nn.functional as F
+            from torchvision.transforms.v2.functional import normalize
+            for image in images:
+                orig_image = to_image(image)
+                w,h = orig_image.size
+                image = orig_image.convert('RGB')
+                image = image.resize((1024, 1024), Image.BILINEAR)
+                im_np = np.array(image)
+                im_tensor = torch.tensor(im_np, dtype=torch.float32).permute(2,0,1)
+                im_tensor = torch.unsqueeze(im_tensor,0)
+                im_tensor = torch.divide(im_tensor,255.0)
+                im_tensor = normalize(im_tensor,[0.5,0.5,0.5],[1.0,1.0,1.0])
+                im_tensor = im_tensor.to(self.device)
+
+                result = self.model(im_tensor)
+                result = torch.squeeze(F.interpolate(result[0][0], size=(h,w), mode='bilinear') ,0)
+                ma = torch.max(result)
+                mi = torch.min(result)
+                result = (result-mi)/(ma-mi)    
+                im_array = (result*255).cpu().data.numpy().astype(np.uint8)
+                pil_im = Image.fromarray(np.squeeze(im_array))
+                new_im = Image.new("RGB", pil_im.size, (0,0,0))
+                new_im.paste(orig_image, mask=pil_im)
+
+                processed_images.append(to_tensor(new_im))
+                processed_masks.append(to_tensor(pil_im))
+
+            new_ims = torch.stack(processed_images, dim=0)
+            new_masks = torch.stack(processed_masks, dim=0)
+            new_ims = new_ims.permute([0,2,3,1])
+
+            return (new_ims, new_masks,)
+
+        else:
+            from rembg import new_session, remove
+            if self.model_checkpoint != model:
+                self.model_checkpoint = model
+                self.model = new_session(self.model_checkpoint, providers=['CPUExecutionProvider'])
+
+            images = images.permute([0,3,1,2])
+            output = []
+            
+            for image in images:
+                image = to_image(image)
+                image = remove(image, session=self.model)
+                output.append(to_tensor(image))
+
+            output = torch.stack(output, dim=0)
+            output = output.permute([0,2,3,1])
+            mask = output[:, :, :, 3] if output.shape[3] == 4 else torch.ones_like(output[:, :, :, 0])
+
+            return (output[:, :, :, :3], mask,)
     
 class ACE_ImageColorFix:
     @classmethod
@@ -549,6 +601,7 @@ class ACE_ImageColorFix:
     CATEGORY = "Ace Nodes"
 
     def execute(self, images, color_map_images, color_fix):
+        from .core.image.colorfix import adain_color_fix, wavelet_color_fix
         color_fix_func = (
             wavelet_color_fix if color_fix == "Wavelet" else adain_color_fix
         )
@@ -559,6 +612,7 @@ class ACE_ImageColorFix:
 
         last_element = images[-1] if len(images) < len(color_map_images) else color_map_images[-1]
         
+        from itertools import zip_longest
         for image, color_map_image in zip_longest(images, color_map_images, fillvalue=last_element):
             result_image = color_fix_func(to_image(image), to_image(color_map_image))
             output.append(to_tensor(result_image))
@@ -607,10 +661,12 @@ class ACE_ImageQA:
         if self.model_checkpoint != model_checkpoint:
             self.model_checkpoint = model_checkpoint
             if model == "moondream2":
+                from transformers import AutoTokenizer, AutoModelForCausalLM
                 self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, trust_remote_code=True)
                 self.model = AutoModelForCausalLM.from_pretrained(model_checkpoint, trust_remote_code=True)
                 self.model = self.model.to(self.device).eval()
             elif model == "MiniCPM-V-2":
+                from transformers import AutoTokenizer, AutoModel
                 self.tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, trust_remote_code=True)
                 self.model = AutoModel.from_pretrained(model_checkpoint, trust_remote_code=True, torch_dtype=torch.bfloat16)
                 self.model = self.model.to(self.device, dtype=torch.bfloat16 if self.bf16_support else torch.float16).eval()
@@ -654,12 +710,14 @@ class ACE_ImageLoadFromCloud:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
         if cloud == "aws-s3":
+            import boto3
             s3 = boto3.client('s3', 
                               aws_access_key_id=access_key_id, 
                               aws_secret_access_key=access_key_secret, 
                               region_name=region)
             s3.download_file(bucket, filepath, save_path)
         elif cloud == "aliyun-oss":
+            import oss2
             oss_auth = oss2.Auth(access_key_id, access_key_secret)
             oss_bucket = oss2.Bucket(oss_auth, region, bucket)
             oss_bucket.get_object_to_file(filepath, save_path)
@@ -669,6 +727,7 @@ class ACE_ImageLoadFromCloud:
         image = f"{bucket}/{filepath} [temp]"
         
         image_path = folder_paths.get_annotated_filepath(image)
+        from PIL import ImageSequence, ImageOps
         img = Image.open(image_path)
         output_images = []
         output_masks = []
@@ -738,6 +797,7 @@ class ACE_ImageSaveToCloud:
             files_to_upload.append((save_path, filepath_formated))
 
         if cloud == "aws-s3":
+            import boto3
             s3 = boto3.client('s3', 
                               aws_access_key_id=access_key_id, 
                               aws_secret_access_key=access_key_secret, 
@@ -748,6 +808,7 @@ class ACE_ImageSaveToCloud:
                 except Exception as e:
                     print(f'An error occurred: {e}')
         elif cloud == "aliyun-oss":
+            import oss2
             oss_auth = oss2.Auth(access_key_id, access_key_secret)
             oss_bucket = oss2.Bucket(oss_auth, region, bucket)
             for filename, objectname in files_to_upload:
@@ -800,28 +861,30 @@ class ACE_ImageFaceCrop:
 
     def execute(self, image, model, crop_width, crop_height):
         image = to_image(image.permute([0,3,1,2])[0]).convert("RGB")
-        np_image = np.array(image)
+        im_np = np.array(image)
 
         face_bboxes = []
         face_images = []
         face_masks = []
 
         if model == 'retinaface':
+            from retinaface import RetinaFace
             if self.model_name != model:
                 self.model_name = model
                 self.model = RetinaFace.build_model()
 
-            faces = RetinaFace.detect_faces(np_image, model=self.model)
+            faces = RetinaFace.detect_faces(im_np, model=self.model)
             if faces:
                 for face in faces.values():
                     face_bboxes.append(face['facial_area'])
         elif model == 'insightface':
+            from insightface.app import FaceAnalysis
             if self.model_name != model:
                 self.model_name = model
                 self.model = FaceAnalysis(providers=['CUDAExecutionProvider', 'CPUExecutionProvider'], root=os.path.join(folder_paths.models_dir, 'insightface'))
                 self.model.prepare(ctx_id=0)
 
-            faces = self.model.get(np_image)
+            faces = self.model.get(im_np)
             if faces:
                 for face in faces:
                     face_bboxes.append(face.bbox.astype(int))
@@ -894,6 +957,7 @@ class ACE_AudioLoad:
         ext = file.lower().split('.')[-1] if '.' in file else 'null'
 
         if ext in ["wav", "mp3", "flac"]:
+            import soundfile as sf
             audio_samples, sample_rate =sf.read(file)
         else:
             raise Exception(f'File format "{ext}" is not supported')
@@ -947,6 +1011,7 @@ class ACE_AudioSave:
         counter = max_counter + 1
 
         audio_path = os.path.join(full_output_folder, f"{filename}_{counter:05}.{extension}")
+        import soundfile as sf
         sf.write(audio_path, audio, sample_rate)
 
         return ()
