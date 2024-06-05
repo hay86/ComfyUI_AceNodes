@@ -293,7 +293,13 @@ class ACE_TextTranslate:
         self.model_checkpoint = None
         self.tokenizer = None
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = (
+            torch.device("mps") 
+            if torch.backends.mps.is_available()
+            else torch.device("cuda") 
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -443,6 +449,7 @@ class ACE_ImageConstrain:
                 "min_width": ("INT", {"default": 0, "min": 0}),
                 "min_height": ("INT", {"default": 0, "min": 0}),
                 "crop_if_required": ("BOOLEAN", {"default": False, "label_on": "yes", "label_off": "no"}),
+                "crop_position": (["center", "top", "bottom", "left", "right"], {"default": "center"}),
             },
         }
 
@@ -450,11 +457,10 @@ class ACE_ImageConstrain:
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
 
-    def execute(self, images, max_width, max_height, min_width, min_height, crop_if_required):
+    def execute(self, images, max_width, max_height, min_width, min_height, crop_if_required, crop_position):
         images = images.permute([0,3,1,2])
         output = []
 
-        from torchvision.transforms.v2 import Resize, CenterCrop
         for image in images:
             image = to_image(image)
 
@@ -469,14 +475,24 @@ class ACE_ImageConstrain:
                     resize_width, resize_height = int(target_height * aspect_ratio), int(target_height)
                 else:
                     resize_width, resize_height = int(target_width), int(target_width / aspect_ratio)
-                image = Resize((resize_height, resize_width))(image)
-                image = CenterCrop((target_height, target_width))(image)
+                image = image.resize((resize_width, resize_height), resample=Image.Resampling.LANCZOS)
+                x0, y0 = max((resize_width-target_width)/2, 0), max((resize_height-target_height)/2, 0)
+                if crop_position == "top":
+                    y0 = 0
+                elif crop_position == "bottom":
+                    y0 = resize_height - target_height
+                elif crop_position == "left":
+                    x0 = 0
+                elif crop_position == "right":
+                    x0 = resize_width - target_width
+                image = image.crop((x0, y0, x0+target_width, y0+target_height))
             else:
                 if target_width / target_height > aspect_ratio:
                     target_width, target_height = int(target_height * aspect_ratio), int(target_height)
                 else:
                     target_width, target_height = int(target_width), int(target_width / aspect_ratio)
-                image = Resize((max(target_height, min_height), max(target_width, min_width)))(image)
+                resize_width, resize_height = max(target_width, min_width), max(target_height, min_height)
+                image = image.resize((resize_width, resize_height), resample=Image.Resampling.LANCZOS)
 
             output.append(to_tensor(image))
 
@@ -489,9 +505,15 @@ class ACE_ImageRemoveBackground:
     def __init__(self):
         self.model_dir = os.path.join(folder_paths.models_dir, "rembg")
         os.environ["U2NET_HOME"] = self.model_dir 
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model_checkpoint = None
         self.model = None
+        self.device = (
+            torch.device("mps") 
+            if torch.backends.mps.is_available()
+            else torch.device("cuda") 
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -533,7 +555,7 @@ class ACE_ImageRemoveBackground:
                 orig_image = to_image(image)
                 w,h = orig_image.size
                 image = orig_image.convert('RGB')
-                image = image.resize((1024, 1024), Image.BILINEAR)
+                image = image.resize((1024, 1024), Image.Resampling.LANCZOS)
                 im_np = np.array(image)
                 im_tensor = torch.tensor(im_np, dtype=torch.float32).permute(2,0,1)
                 im_tensor = torch.unsqueeze(im_tensor,0)
@@ -627,8 +649,17 @@ class ACE_ImageQA:
         self.model_checkpoint = None
         self.tokenizer = None
         self.model = None
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        self.bf16_support = torch.cuda.is_available() and torch.cuda.get_device_capability(self.device)[0] >= 8
+        self.device = (
+            torch.device("mps") 
+            if torch.backends.mps.is_available()
+            else torch.device("cuda") 
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
+        self.bf16_support = (
+            torch.backends.mps.is_available() or 
+            (torch.cuda.is_available() and torch.cuda.get_device_capability(self.device)[0] >= 8)
+        )
 
     @classmethod
     def INPUT_TYPES(s):
@@ -905,7 +936,7 @@ class ACE_ImageFaceCrop:
                     x_offset = int((new_width - width) / 2)
                     x1, x2 = x1-x_offset, x2+x_offset
                 
-                face_image = image.crop((x1, y1, x2, y2)).resize((crop_width, crop_height), Image.LANCZOS)
+                face_image = image.crop((x1, y1, x2, y2)).resize((crop_width, crop_height), Image.Resampling.LANCZOS)
                 face_images.append(to_tensor(face_image))
 
                 face_mask = torch.zeros(image.size)
@@ -924,6 +955,40 @@ class ACE_ImageFaceCrop:
         output_masks = output_masks.permute([0,2,1])
         
         return (output_images, output_masks, len(face_bboxes)>0)
+
+
+#####################
+# ACE Nodes of Mask #
+#####################
+    
+class ACE_MaskBlur:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "mask": ("MASK",),
+                "radius": ("INT", { "default": 5, "min": 0, "max": 256, "step": 1, }),
+            }
+        }
+
+    RETURN_TYPES = ("MASK",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, mask, radius):
+        if radius == 0:
+            return (mask,)
+
+        if radius % 2 == 0:
+            radius += 1
+
+        if mask.dim() == 2:
+            mask = mask.unsqueeze(0)
+        
+        from torchvision.transforms.v2.functional import gaussian_blur
+        mask = gaussian_blur(mask.unsqueeze(1), kernel_size=int(6 * radius + 1), sigma=radius).squeeze(1)
+
+        return(mask,)
 
 
 ######################
@@ -1124,6 +1189,8 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageGetSize"          : ACE_ImageGetSize,
     "ACE_ImageFaceCrop"         : ACE_ImageFaceCrop,
 
+    "ACE_MaskBlur"              : ACE_MaskBlur,
+
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
     "ACE_AudioPlay"             : ACE_AudioPlay,
@@ -1157,6 +1224,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageSaveToCloud"      : "🅐 Image Save To Cloud",
     "ACE_ImageGetSize"          : "🅐 Image Get Size",
     "ACE_ImageFaceCrop"         : "🅐 Image Face Crop",
+
+    "ACE_MaskBlur"              : "🅐 Mask Blur",
 
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
