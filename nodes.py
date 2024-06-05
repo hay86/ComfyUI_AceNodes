@@ -449,6 +449,8 @@ class ACE_ImageConstrain:
                 "min_width": ("INT", {"default": 0, "min": 0}),
                 "min_height": ("INT", {"default": 0, "min": 0}),
                 "crop_if_required": ("BOOLEAN", {"default": False, "label_on": "yes", "label_off": "no"}),
+            },
+            "optional": {
                 "crop_position": (["center", "top", "bottom", "left", "right"], {"default": "center"}),
             },
         }
