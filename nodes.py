@@ -457,7 +457,7 @@ class ACE_ImageConstrain:
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
 
-    def execute(self, images, max_width, max_height, min_width, min_height, crop_if_required, crop_position):
+    def execute(self, images, max_width, max_height, min_width, min_height, crop_if_required, crop_position="center"):
         images = images.permute([0,3,1,2])
         output = []
 
