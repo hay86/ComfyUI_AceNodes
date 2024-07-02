@@ -1,0 +1,15 @@
+[project]
+name = "comfyui_acenodes"
+description = "Some useful custom nodes that are not included in ComfyUI core yet."
+version = "1.0.0"
+license = "LICENSE"
+dependencies = ["torch", "torchvision", "numpy", "pillow", "rembg", "requests", "beautifulsoup4", "huggingface_hub", "soundfile", "transformers", "boto3", "oss2", "insightface", "retina-face"]
+
+[project.urls]
+Repository = "https://github.com/hay86/ComfyUI_AceNodes"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "hay86"
+DisplayName = "ComfyUI_AceNodes"
+Icon = ""
