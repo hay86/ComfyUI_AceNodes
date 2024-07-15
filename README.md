@@ -40,3 +40,4 @@ Some useful custom nodes that are not included in ComfyUI core yet
 ## Other Nodes
 - Expression Eval
 - Any Input Switch (bool)
+- Any Input To Any

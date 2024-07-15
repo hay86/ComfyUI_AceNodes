@@ -1159,6 +1159,22 @@ class ACE_AnyInputSwitchBool:
 
     def execute(self, bool, any_if_true, any_if_false):
         return (any_if_true if bool else any_if_false,)
+    
+class ACE_AnyInputToAny:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "any": (any,),
+            },
+        }
+
+    RETURN_TYPES = (any,)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, any):
+        return (any,)
 
 
 #########################
@@ -1199,6 +1215,7 @@ NODE_CLASS_MAPPINGS = {
 
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
+    "ACE_AnyInputToAny"         : ACE_AnyInputToAny,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1235,4 +1252,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",
+    "ACE_AnyInputToAny"         : "🅐 Any Input To Any",
 }
