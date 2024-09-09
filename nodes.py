@@ -957,6 +957,65 @@ class ACE_ImageFaceCrop:
         output_masks = output_masks.permute([0,2,1])
         
         return (output_images, output_masks, len(face_bboxes)>0)
+    
+
+class ACE_ImagePixelate:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "pixel_size": ("INT", {"default": 8, "min": 1, "max": 64, "step": 1}),
+                "palette_colors": ("STRING", {"default": '121212\n31342F\n555F50\n7E8C77\n9DA09B', "multiline": True}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, images, pixel_size, palette_colors):
+        images = images.permute([0,3,1,2])
+        palette = palette_colors.split('\n')
+        output = []
+        
+        from PIL import ImageDraw
+
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('0x').strip()
+            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    
+        def get_color_for_depth(depth, palette):
+            step = 256//len(palette)
+            threshold = list(range(0, 255, step))
+            for i in range(1, len(threshold)):
+                if depth < threshold[i]:
+                    return hex_to_rgb(palette[i-1])
+            return hex_to_rgb(palette[-1])
+
+        for image in images:
+            image = to_image(image).convert('L')
+            width, height = image.size
+            small_image = image.resize((width // pixel_size, height // pixel_size), Image.LANCZOS)
+            pixelated_image = small_image.resize((width, height), Image.LANCZOS)
+
+            output_image = Image.new('RGB', (width, height), get_color_for_depth(0, palette))
+            draw = ImageDraw.Draw(output_image)
+
+            for y in range(0, height, pixel_size):
+                for x in range(0, width, pixel_size):
+                    block = pixelated_image.crop((x, y, x + pixel_size, y + pixel_size))
+                    avg_color = int(sum(block.getdata()) / (pixel_size * pixel_size))
+
+                    color = get_color_for_depth(avg_color, palette)
+                    draw.ellipse((x, y, x + pixel_size - 1, y + pixel_size - 1), fill=color)
+
+            output.append(to_tensor(output_image))
+
+        output = torch.stack(output, dim=0)
+        output = output.permute([0,2,3,1])
+
+        return (output[:, :, :, :3],)
 
 
 #####################
@@ -1206,6 +1265,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageSaveToCloud"      : ACE_ImageSaveToCloud,
     "ACE_ImageGetSize"          : ACE_ImageGetSize,
     "ACE_ImageFaceCrop"         : ACE_ImageFaceCrop,
+    "ACE_ImagePixelate"         : ACE_ImagePixelate,
 
     "ACE_MaskBlur"              : ACE_MaskBlur,
 
@@ -1243,6 +1303,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageSaveToCloud"      : "🅐 Image Save To Cloud",
     "ACE_ImageGetSize"          : "🅐 Image Get Size",
     "ACE_ImageFaceCrop"         : "🅐 Image Face Crop",
+    "ACE_ImagePixelate"         : "🅐 Image Pixelate",
 
     "ACE_MaskBlur"              : "🅐 Mask Blur",
 

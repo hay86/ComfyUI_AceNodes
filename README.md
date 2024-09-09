@@ -28,6 +28,7 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Image Save To Cloud
 - Image Get Size
 - Image Face Crop
+- Image Pixelate
 
 ## Mask Nodes
 - Mask Blur
