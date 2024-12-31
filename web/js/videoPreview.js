@@ -73,48 +73,55 @@ function addPreviewOptions(nodeType) {
 function previewVideo(node,file,type){
     var element = document.createElement("div");
     const previewNode = node;
-    var previewWidget = node.addDOMWidget("videopreview", "preview", element, {
-        serialize: false,
-        hideOnZoom: false,
-        getValue() {
-            return element.value;
-        },
-        setValue(v) {
-            element.value = v;
-        },
-    });
-    previewWidget.computeSize = function(width) {
-        if (this.aspectRatio && !this.parentEl.hidden) {
-            let height = (previewNode.size[0]-20)/ this.aspectRatio + 10;
-            if (!(height > 0)) {
-                height = 0;
-            }
-            this.computedHeight = height + 10;
-            return [width, height];
-        }
-        return [width, -4];//no loaded src, widget should not display
-    }
-    // element.style['pointer-events'] = "none"
-    previewWidget.value = {hidden: false, paused: false, params: {}}
-    previewWidget.parentEl = document.createElement("div");
-    previewWidget.parentEl.className = "video_preview";
-    previewWidget.parentEl.style['width'] = "100%"
-    element.appendChild(previewWidget.parentEl);
-    previewWidget.videoEl = document.createElement("video");
-    previewWidget.videoEl.controls = true;
-    previewWidget.videoEl.loop = false;
-    previewWidget.videoEl.muted = false;
-    previewWidget.videoEl.style['width'] = "100%"
-    previewWidget.videoEl.addEventListener("loadedmetadata", () => {
 
-        previewWidget.aspectRatio = previewWidget.videoEl.videoWidth / previewWidget.videoEl.videoHeight;
-        fitHeight(this);
-    });
-    previewWidget.videoEl.addEventListener("error", () => {
-        //TODO: consider a way to properly notify the user why a preview isn't shown.
-        previewWidget.parentEl.hidden = true;
-        fitHeight(this);
-    });
+    let existingWidget = node.widgets.find(w => w.name === "videopreview");
+    if (existingWidget) {
+        element = existingWidget.parentEl;
+        previewWidget = existingWidget;
+    } else {
+        var previewWidget = node.addDOMWidget("videopreview", "preview", element, {
+            serialize: false,
+            hideOnZoom: false,
+            getValue() {
+                return element.value;
+            },
+            setValue(v) {
+                element.value = v;
+            },
+        });
+        previewWidget.computeSize = function(width) {
+            if (this.aspectRatio && !this.parentEl.hidden) {
+                let height = (previewNode.size[0]-20)/ this.aspectRatio + 10;
+                if (!(height > 0)) {
+                    height = 0;
+                }
+                this.computedHeight = height + 10;
+                return [width, height];
+            }
+            return [width, -4];//no loaded src, widget should not display
+        }
+        // element.style['pointer-events'] = "none"
+        previewWidget.value = {hidden: false, paused: false, params: {}}
+        previewWidget.parentEl = document.createElement("div");
+        previewWidget.parentEl.className = "video_preview";
+        previewWidget.parentEl.style['width'] = "100%"
+        element.appendChild(previewWidget.parentEl);
+        previewWidget.videoEl = document.createElement("video");
+        previewWidget.videoEl.controls = true;
+        previewWidget.videoEl.loop = false;
+        previewWidget.videoEl.muted = false;
+        previewWidget.videoEl.style['width'] = "100%"
+        previewWidget.videoEl.addEventListener("loadedmetadata", () => {
+
+            previewWidget.aspectRatio = previewWidget.videoEl.videoWidth / previewWidget.videoEl.videoHeight;
+            fitHeight(this);
+        });
+        previewWidget.videoEl.addEventListener("error", () => {
+            //TODO: consider a way to properly notify the user why a preview isn't shown.
+            previewWidget.parentEl.hidden = true;
+            fitHeight(this);
+        });
+    }
 
     let params =  {
         "filename": file,
