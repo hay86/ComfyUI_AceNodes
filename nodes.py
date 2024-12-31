@@ -1168,6 +1168,47 @@ class ACE_AudioPlay:
         return {"ui": {"audio": audio, "sample_rate": sample_rate}, "result": (any,)}
     
 
+######################
+# ACE Nodes of Video #
+######################
+
+class ACE_VideoLoad:
+    @classmethod
+    def INPUT_TYPES(s):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f)) and f.split('.')[-1] in ["mp4", "webm","mkv","avi"]]
+        return {"required":{
+            "video":(sorted(files),),
+        }}
+    
+    RETURN_TYPES = ("STRING",)
+    OUTPUT_NODE = False
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, video):
+        input_dir = folder_paths.get_input_directory()
+        video_path = os.path.join(input_dir,video)
+        return (video_path,)
+
+class ACE_VideoPreview:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required":{
+            "video":("STRING",),
+        }}
+
+    RETURN_TYPES = ()
+    OUTPUT_NODE = True
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, video):
+        video_name = os.path.basename(video)
+        video_path_name = os.path.basename(os.path.dirname(video))
+        return {"ui":{"video":[video_name,video_path_name]}}
+    
+
 #######################
 # ACE Nodes of Others #
 #######################
@@ -1273,6 +1314,9 @@ NODE_CLASS_MAPPINGS = {
     "ACE_AudioSave"             : ACE_AudioSave,
     "ACE_AudioPlay"             : ACE_AudioPlay,
 
+    "ACE_VideoLoad"             : ACE_VideoLoad,
+    "ACE_VideoPreview"          : ACE_VideoPreview,
+
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
     "ACE_AnyInputToAny"         : ACE_AnyInputToAny,
@@ -1310,6 +1354,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
     "ACE_AudioPlay"             : "🅐 Audio Play",
+
+    "ACE_VideoLoad"             : "🅐 Video Load",
+    "ACE_VideoPreview"          : "🅐 Video Preview",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",

@@ -38,6 +38,10 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Audio Save
 - Audio Play
 
+## Video Nodes
+- Video Load
+- Video Preview
+
 ## Other Nodes
 - Expression Eval
 - Any Input Switch (bool)
