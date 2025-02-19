@@ -1016,6 +1016,74 @@ class ACE_ImagePixelate:
         output = output.permute([0,2,3,1])
 
         return (output[:, :, :, :3],)
+    
+class ACE_ImageMakeSlideshow:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "fps": ("INT", {"default": 25, "max": 100, "min": 1}),
+                "image_display_time": ("FLOAT", {"min": 0.1, "max": 3600, "step": 0.1, "default": 5.0}),
+                "transition_time": ("FLOAT", {"min": 0.1, "max": 3600, "step": 0.1, "default": 0.5}),
+                "transition_effect": (["fade", "slide_left", "slide_right", "slide_up", "slide_down"], {"default": 'fade'}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, images, fps, image_display_time, transition_time, transition_effect):
+        output = []
+
+        for image in images:
+            if len(output) > 0:
+                transition_frames = self.generate_transition(output[-1], image, transition_effect, int(fps * transition_time))
+                for frame in transition_frames:
+                    output.append(frame)
+            for _ in range(int(fps * image_display_time)):
+                output.append(image)
+
+        output = torch.stack(output, dim=0)
+        return (output,)
+    
+    def generate_transition(self, img1, img2, effect, duration):
+        img1 = np.array(img1)
+        img2 = np.array(img2)
+
+        assert img1.shape == img2.shape, "img1 and img2 must in same shape"
+        h, w, _ = img1.shape
+
+        frames = []
+        for i in range(duration):
+            alpha = i / duration
+            if effect == "fade":
+                frame = (img1 * (1 - alpha) + img2 * alpha).astype(np.uint8)
+            elif effect == "slide_left":
+                offset = int(w * alpha)
+                frame = np.zeros_like(img1)
+                frame[:, :w - offset] = img1[:, offset:]
+                frame[:, w - offset:] = img2[:, :offset]
+            elif effect == "slide_right":
+                offset = int(w * alpha)
+                frame = np.zeros_like(img1)
+                frame[:, offset:] = img1[:, :w - offset]
+                frame[:, :offset] = img2[:, w - offset:]
+            elif effect == "slide_up":
+                offset = int(h * alpha)
+                frame = np.zeros_like(img1)
+                frame[:h - offset, :] = img1[offset:, :]
+                frame[h - offset:, :] = img2[:offset, :]
+            elif effect == "slide_down":
+                offset = int(h * alpha)
+                frame = np.zeros_like(img1)
+                frame[offset:, :] = img1[:h - offset, :]
+                frame[:offset, :] = img2[h - offset:, :]
+            else:
+                raise ValueError(f"effect {effect} not supported yet")
+            frames.append(torch.from_numpy(frame))
+        return frames
 
 
 #####################
@@ -1198,7 +1266,7 @@ class ACE_VideoPreview:
             "video":("STRING",),
         }}
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("STRING",)
     OUTPUT_NODE = True
     FUNCTION = "execute"
     CATEGORY = "Ace Nodes"
@@ -1206,7 +1274,52 @@ class ACE_VideoPreview:
     def execute(self, video):
         video_name = os.path.basename(video)
         video_path_name = os.path.basename(os.path.dirname(video))
-        return {"ui":{"video":[video_name,video_path_name]}}
+        return {"ui":{"video":[video_name,video_path_name]}, "result": (video,)}
+    
+class ACE_VideoConcat:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required":{
+            "video1":("STRING",),
+            "video2":("STRING",),
+            "method": (["vertical", "horizontal", "append"], {"default": 'vertical'}),
+            "audio": (["video1", "video2"], {"default": 'video1'}),
+            "seam_size": ("INT", { "default": 1024, "min": 1, "max": 2048, "step": 1, }),
+        }}
+
+    RETURN_TYPES = ("STRING",)
+    OUTPUT_NODE = False
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, video1, video2, method, audio, seam_size):
+        filename = os.path.basename(video1) + '.' + os.path.basename(video2)
+        output_path = os.path.join(folder_paths.temp_directory, filename)
+
+        if method == 'append':
+            cmd = f'''/usr/bin/ffmpeg \
+-i {video1} -i {video2} \
+-filter_complex "[0:v]scale=iw:ih[v0]; [1:v]scale=iw:ih[v1]; [v0][0:a][v1][1:a]concat=n=2:v=1:a=1[outv][outa]" \
+-map "[outv]" -map "[outa]" \
+-c:v libx264 -c:a aac -b:a 192k -r 25 -y \
+{output_path}'''
+        else:
+            audio_opt = 0 if audio == 'video1' else 1
+            direction_opt = 'v' if method == 'vertical' else 'h'
+            seam_size_opt =  f'{seam_size}:-1' if method == 'vertical' else f'-2:{seam_size}'
+            cmd_ffprobe = 'ffprobe -v error -show_entries format=duration -of csv=p=0'
+            cmd_awk = "awk '{print ($1 < $2) ? $1 : $2}'"
+            cmd = f'''/usr/bin/ffmpeg \
+-i {video1} -i {video2} \
+-filter_complex "[0:v]scale={seam_size_opt}[v0];[1:v]scale={seam_size_opt}[v1];[v0][v1]{direction_opt}stack=inputs=2[v]" \
+-map "[v]" -map {audio_opt}:a \
+-c:v libx264 -c:a aac -b:a 192k -r 25 -y \
+-t $(echo "$({cmd_ffprobe} {video1}) $({cmd_ffprobe} {video2})" | {cmd_awk}) \
+{output_path}'''
+        
+        print(cmd)
+        os.system(cmd)
+        return (output_path,)
     
 
 #######################
@@ -1231,7 +1344,8 @@ class ACE_ExpressionEval:
     CATEGORY = "Ace Nodes"
 
     def execute(self, value, a='', b=''):
-        result = eval(value, {'a':a, 'b':b})
+        from simpleeval import simple_eval
+        result = simple_eval(value, names={"a": a, "b": b})
         try:
             result_int = round(int(result))
         except:
@@ -1307,6 +1421,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageGetSize"          : ACE_ImageGetSize,
     "ACE_ImageFaceCrop"         : ACE_ImageFaceCrop,
     "ACE_ImagePixelate"         : ACE_ImagePixelate,
+    "ACE_ImageMakeSlieshow"     : ACE_ImageMakeSlideshow,
 
     "ACE_MaskBlur"              : ACE_MaskBlur,
 
@@ -1316,6 +1431,7 @@ NODE_CLASS_MAPPINGS = {
 
     "ACE_VideoLoad"             : ACE_VideoLoad,
     "ACE_VideoPreview"          : ACE_VideoPreview,
+    "ACE_VideoConcat"           : ACE_VideoConcat,
 
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
@@ -1348,6 +1464,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageGetSize"          : "🅐 Image Get Size",
     "ACE_ImageFaceCrop"         : "🅐 Image Face Crop",
     "ACE_ImagePixelate"         : "🅐 Image Pixelate",
+    "ACE_ImageMakeSlieshow"     : "🅐 Image Make Slideshow",
 
     "ACE_MaskBlur"              : "🅐 Mask Blur",
 
@@ -1357,6 +1474,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
     "ACE_VideoLoad"             : "🅐 Video Load",
     "ACE_VideoPreview"          : "🅐 Video Preview",
+    "ACE_VideoConcat"           : "🅐 Video Concat",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",
