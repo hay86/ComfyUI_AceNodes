@@ -29,6 +29,7 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Image Get Size
 - Image Face Crop
 - Image Pixelate
+- Image Make Slideshow
 
 ## Mask Nodes
 - Mask Blur
@@ -37,10 +38,12 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Audio Load
 - Audio Save
 - Audio Play
+- Audio Crop
 
 ## Video Nodes
 - Video Load
 - Video Preview
+- Video Concat
 
 ## Other Nodes
 - Expression Eval

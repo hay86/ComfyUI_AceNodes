@@ -1235,6 +1235,56 @@ class ACE_AudioPlay:
     def execute(self, mode, volume, audio, sample_rate):
         return {"ui": {"audio": audio, "sample_rate": sample_rate}, "result": (any,)}
     
+class ACE_AudioCrop:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "audio": (any, {"forceInput": True}),
+                "start_time": ("STRING", {"default": "0:00.000"}),
+                "end_time": ("STRING", {"default": "1:00.000"}),
+            },
+        }
+    
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, audio, start_time: str = "0:00.000", end_time: str = "1:00.000"):
+        waveform = audio["waveform"]
+        sample_rate = audio["sample_rate"]
+        
+        def parse_time(time_str):
+            parts = time_str.split(":")
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = float(parts[1])
+            else:
+                minutes = 0
+                seconds = float(parts[0])
+            return minutes * 60 + seconds
+        
+        start_seconds = parse_time(start_time)
+        end_seconds = parse_time(end_time)
+        
+        start_frame = int(start_seconds * sample_rate)
+        end_frame = int(end_seconds * sample_rate)
+        
+        # Ensure valid frame range
+        total_frames = waveform.shape[-1]
+        start_frame = max(0, min(start_frame, total_frames - 1))
+        end_frame = max(0, min(end_frame, total_frames - 1))
+        
+        if start_frame > end_frame:
+            raise ValueError("AudioCrop: Start time must be less than end time and within the audio length.")
+        
+        return (
+            {
+                "waveform": waveform[..., start_frame:end_frame],
+                "sample_rate": sample_rate,
+            },
+        )
+    
 
 ######################
 # ACE Nodes of Video #
@@ -1428,6 +1478,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_AudioLoad"             : ACE_AudioLoad,
     "ACE_AudioSave"             : ACE_AudioSave,
     "ACE_AudioPlay"             : ACE_AudioPlay,
+    "ACE_AudioCrop"             : ACE_AudioCrop,
 
     "ACE_VideoLoad"             : ACE_VideoLoad,
     "ACE_VideoPreview"          : ACE_VideoPreview,
@@ -1471,6 +1522,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_AudioLoad"             : "🅐 Audio Load",
     "ACE_AudioSave"             : "🅐 Audio Save",
     "ACE_AudioPlay"             : "🅐 Audio Play",
+    "ACE_AudioCrop"             : "🅐 Audio Crop",
 
     "ACE_VideoLoad"             : "🅐 Video Load",
     "ACE_VideoPreview"          : "🅐 Video Preview",
