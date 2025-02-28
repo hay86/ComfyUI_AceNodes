@@ -45,6 +45,9 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Video Preview
 - Video Concat
 
+## LLM Nodes
+- OpenAI GPT Chat
+
 ## Other Nodes
 - Expression Eval
 - Any Input Switch (bool)

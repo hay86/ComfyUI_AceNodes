@@ -1372,6 +1372,78 @@ class ACE_VideoConcat:
         return (output_path,)
     
 
+####################
+# ACE Nodes of LLM #
+####################
+
+class ACE_OpenAI_GPT_Chat:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "system_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "user_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "max_tokens": ("INT", {"default": 200, "min": 1, "max": 10000, "step": 1}),
+                "temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.0, "step": 0.1}),
+                "model": (["gpt-4.5-preview",
+                           "gpt-4o",
+                           "chatgpt-4o-latest",
+                           "gpt-4o-mini",
+                           "o1",
+                           "o1-mini",
+                           "o3-mini",
+                           "o1-preview",
+                           "gpt-4o-realtime-preview",
+                           "gpt-4o-mini-realtime-preview",
+                           "gpt-4o-audio-preview"],),
+            },
+            "optional": {
+                "image": ("IMAGE",)  # Optional image input
+            }
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, system_prompt, user_prompt, max_tokens, temperature, model, image=None):
+        # Set up OpenAI client
+        import openai
+        api_key = os.getenv("OPENAI_API_KEY")
+        client = openai.OpenAI(api_key=api_key)
+        print(f"GET OpenAI Key: {api_key}")
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        data = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        if image is not None:
+            # Convert tensor to PIL Image
+            pil_image = Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+        
+            # Convert PIL Image to base64
+            import io
+            import base64
+            buffered = io.BytesIO()
+            pil_image.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            base64_image = f"data:image/png;base64,{img_str}"
+            data["messages"].append({"role": "user", "content": [{"type": "image_url", "image_url": {"url": base64_image}}]})
+
+        response = client.chat.completions.create(**data)
+        if response.choices[0].message.content is None:
+            raise ValueError("No content in response")
+        caption = response.choices[0].message.content
+        return (caption, )
+    
+
 #######################
 # ACE Nodes of Others #
 #######################
@@ -1484,6 +1556,8 @@ NODE_CLASS_MAPPINGS = {
     "ACE_VideoPreview"          : ACE_VideoPreview,
     "ACE_VideoConcat"           : ACE_VideoConcat,
 
+    "ACE_OpenAI_GPT_Chat"       : ACE_OpenAI_GPT_Chat,
+
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
     "ACE_AnyInputToAny"         : ACE_AnyInputToAny,
@@ -1527,6 +1601,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_VideoLoad"             : "🅐 Video Load",
     "ACE_VideoPreview"          : "🅐 Video Preview",
     "ACE_VideoConcat"           : "🅐 Video Concat",
+
+    "ACE_OpenAI_GPT_Chat"       : "🅐 OpenAI GPT Chat",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",
