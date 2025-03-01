@@ -18,6 +18,8 @@ Some useful custom nodes that are not included in ComfyUI core yet
 - Text To Resolution
 - Text Translate
 - Text Google Translate
+- Text Load
+- Text Save
 
 ## Image Nodes
 - Image Constrain

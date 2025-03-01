@@ -433,6 +433,55 @@ class ACE_TextGoogleTranslate:
 
         return (text,)
     
+class ACE_TextLoad:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "file_path": ("STRING", {"default": ''}),
+            },
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, file_path):
+        result = ''
+        with open(file_path, 'r', encoding="utf-8") as f:
+            result = f.read()
+        return (result, )
+
+class ACE_TextSave:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": ("STRING", {"default": '', "multiline": True}),
+                "filename_prefix": ("STRING", {"default": 'ComfyUI'}),
+            },
+            "optional": {
+                "file_extension": ("STRING", {"default": ".txt"}),
+            },
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    OUTPUT_NODE = True
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, text, filename_prefix="ComfyUI", file_extension=".txt"):
+        output_dir = folder_paths.get_output_directory()
+        full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, output_dir)
+
+        base_file_name = f"{filename}_{counter:05}_{file_extension}"
+        file_path = os.path.join(full_output_folder, base_file_name)
+
+        with open(file_path, 'w', encoding="utf-8") as f:
+            f.write(text)
+
+        return (file_path, )
+    
 
 ######################
 # ACE Nodes of Image #
@@ -1533,6 +1582,8 @@ NODE_CLASS_MAPPINGS = {
     "ACE_TextToResolution"      : ACE_TextToResolution,
     "ACE_TextTranslate"         : ACE_TextTranslate,
     "ACE_TextGoogleTranslate"   : ACE_TextGoogleTranslate,
+    "ACE_TextLoad"              : ACE_TextLoad,
+    "ACE_TextSave"              : ACE_TextSave,
 
     "ACE_ImageConstrain"        : ACE_ImageConstrain,
     "ACE_ImageRemoveBackground" : ACE_ImageRemoveBackground,
@@ -1579,6 +1630,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_TextToResolution"      : "🅐 Text To Resolution",
     "ACE_TextTranslate"         : "🅐 Text Translate",
     "ACE_TextGoogleTranslate"   : "🅐 Text Google Translate",
+    "ACE_TextLoad"              : "🅐 Text Load",
+    "ACE_TextSave"              : "🅐 Text Save",
 
     "ACE_ImageConstrain"        : "🅐 Image Constrain",
     "ACE_ImageRemoveBackground" : "🅐 Image Remove Background",
