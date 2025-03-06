@@ -1594,7 +1594,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_ImageGetSize"          : ACE_ImageGetSize,
     "ACE_ImageFaceCrop"         : ACE_ImageFaceCrop,
     "ACE_ImagePixelate"         : ACE_ImagePixelate,
-    "ACE_ImageMakeSlieshow"     : ACE_ImageMakeSlideshow,
+    "ACE_ImageMakeSlideshow"    : ACE_ImageMakeSlideshow,
 
     "ACE_MaskBlur"              : ACE_MaskBlur,
 
@@ -1642,7 +1642,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_ImageGetSize"          : "🅐 Image Get Size",
     "ACE_ImageFaceCrop"         : "🅐 Image Face Crop",
     "ACE_ImagePixelate"         : "🅐 Image Pixelate",
-    "ACE_ImageMakeSlieshow"     : "🅐 Image Make Slideshow",
+    "ACE_ImageMakeSlideshow"    : "🅐 Image Make Slideshow",
 
     "ACE_MaskBlur"              : "🅐 Mask Blur",
 
