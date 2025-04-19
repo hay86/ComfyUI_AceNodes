@@ -1444,7 +1444,7 @@ class ACE_OpenAI_GPT_Chat:
                            "o1-preview",
                            "gpt-4o-realtime-preview",
                            "gpt-4o-mini-realtime-preview",
-                           "gpt-4o-audio-preview"],),
+                           "gpt-4o-audio-preview"], {"default": "chatgpt-4o-latest"}),
             },
             "optional": {
                 "image": ("IMAGE",)  # Optional image input
@@ -1492,6 +1492,47 @@ class ACE_OpenAI_GPT_Chat:
         caption = response.choices[0].message.content
         return (caption, )
     
+
+class ACE_OpenAI_GPT_TTS:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": ("STRING", {"multiline": True, "default": ""}),
+                "model": (["tts-1", "tts-1-hd", "gpt-4o-mini-tts"], {"default": "gpt-4o-mini-tts"}),
+                "voice": (["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"],),
+                "instructions": ("STRING", {"multiline": True, "default": ""}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05}),
+            },
+        }
+    
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, text, model, voice, instructions, speed):
+        import openai
+        import io
+        import torchaudio
+        api_key = os.getenv("OPENAI_API_KEY")
+        client = openai.OpenAI(api_key=api_key)
+        print(f"GET OpenAI Key: {api_key}")
+
+        with client.audio.speech.with_streaming_response.create(
+            model=model,
+            voice=voice,
+            input=text,
+            instructions=instructions,
+            speed=speed,
+            response_format="wav"
+        ) as response:
+            audio_bytes = b"".join(response.iter_bytes())
+            audio_stream = io.BytesIO(audio_bytes)
+            waveform, sample_rate = torchaudio.load(audio_stream)
+        return ({
+            "waveform": waveform.unsqueeze(0),
+            "sample_rate": sample_rate
+        },)
 
 #######################
 # ACE Nodes of Others #
@@ -1608,6 +1649,7 @@ NODE_CLASS_MAPPINGS = {
     "ACE_VideoConcat"           : ACE_VideoConcat,
 
     "ACE_OpenAI_GPT_Chat"       : ACE_OpenAI_GPT_Chat,
+    "ACE_OpenAI_GPT_TTS"        : ACE_OpenAI_GPT_TTS,
 
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
@@ -1656,6 +1698,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ACE_VideoConcat"           : "🅐 Video Concat",
 
     "ACE_OpenAI_GPT_Chat"       : "🅐 OpenAI GPT Chat",
+    "ACE_OpenAI_GPT_TTS"        : "🅐 OpenAI GPT TTS",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",

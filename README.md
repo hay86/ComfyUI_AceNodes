@@ -49,6 +49,7 @@ Some useful custom nodes that are not included in ComfyUI core yet
 
 ## LLM Nodes
 - OpenAI GPT Chat
+- OpenAI GPT TTS
 
 ## Other Nodes
 - Expression Eval
