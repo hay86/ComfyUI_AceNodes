@@ -1524,7 +1524,7 @@ class ACE_OpenAI_GPT_TTS:
             input=text,
             instructions=instructions,
             speed=speed,
-            response_format="wav"
+            response_format="mp3"
         ) as response:
             audio_bytes = b"".join(response.iter_bytes())
             audio_stream = io.BytesIO(audio_bytes)
