@@ -1481,7 +1481,7 @@ class ACE_OpenAI_GPT_Chat:
             import io
             import base64
             buffered = io.BytesIO()
-            pil_image.save(buffered, format="PNG")
+            pil_image.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             base64_image = f"data:image/png;base64,{img_str}"
             data["messages"].append({"role": "user", "content": [{"type": "image_url", "image_url": {"url": base64_image}}]})
