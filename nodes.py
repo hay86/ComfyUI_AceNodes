@@ -1533,6 +1533,90 @@ class ACE_OpenAI_GPT_TTS:
             "waveform": waveform.unsqueeze(0),
             "sample_rate": sample_rate
         },)
+    
+
+class ACE_OpenAI_GPT_IMAGE:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "prompt": ("STRING", {"multiline": True, "default": ""}),
+                "model": (["gpt-image-1"], {"default": "gpt-image-1"}),
+                "n": ("INT", {"default": 1, "min": 1, "max": 10, "step": 1}),
+                "quality": (["high", "medium", "low"], {"default": "medium"}),
+                "size": (["1024x1024", "1536x1024", "1024x1536"], {"default": "1024x1024"}),
+            },
+            "optional": {
+                "image": ("IMAGE",),
+                "mask": ("MASK",),
+            }
+        }
+    
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "execute"
+    CATEGORY = "Ace Nodes"
+
+    def execute(self, prompt, model, n, quality, size, image=None, mask=None):
+        # Set up OpenAI client
+        import openai
+        import base64
+        import io
+        api_key = os.getenv("OPENAI_API_KEY")
+        client = openai.OpenAI(api_key=api_key)
+        print(f"GET OpenAI Key: {api_key}")
+
+        output = []
+
+        if image is None:
+            img = client.images.generate(
+                model=model,
+                prompt=prompt,
+                n=n,
+                size=size,
+                quality=quality,
+            )
+        else:
+            image = image.permute([0,3,1,2])
+            image_buf = []
+            for im in image:
+                im = to_image(im).convert('L')
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+                buf.seek(0)
+                image_buf.append(("image.png", buf, "image/png"))
+
+            mask = mask[0]
+            mask = mask.clamp(0, 1)
+            alpha = 1 - (mask * 255).byte().cpu().numpy()
+            h, w = alpha.shape
+            rgb = np.full((h, w, 3), 255, dtype=np.uint8)
+            rgba = np.dstack((rgb, alpha))
+            mask_pil = Image.fromarray(rgba, mode="RGBA")
+            
+            mask_buf = io.BytesIO()
+            mask_pil.save(mask_buf, format="PNG")
+            mask_buf.seek(0)
+            mask_buf = ("mask.png", mask_buf, "image/png")
+
+            img = client.images.edit(
+                model=model,
+                prompt=prompt,
+                n=n,
+                size=size,
+                quality=quality,
+                image=image_buf,
+                mask=mask_buf,
+            )
+        
+        for img_data in img.data:
+            image_bytes = base64.b64decode(img_data.b64_json)
+            image = Image.open(io.BytesIO(image_bytes))
+            output.append(to_tensor(image))
+        output = torch.stack(output, dim=0)
+        output = output.permute([0,2,3,1])
+
+        return (output[:, :, :, :3],)
+   
 
 #######################
 # ACE Nodes of Others #
@@ -1650,6 +1734,7 @@ NODE_CLASS_MAPPINGS = {
 
     "ACE_OpenAI_GPT_Chat"       : ACE_OpenAI_GPT_Chat,
     "ACE_OpenAI_GPT_TTS"        : ACE_OpenAI_GPT_TTS,
+    "ACE_OpenAI_GPT_IMAGE"      : ACE_OpenAI_GPT_IMAGE,
 
     "ACE_Expression_Eval"       : ACE_ExpressionEval,
     "ACE_AnyInputSwitchBool"    : ACE_AnyInputSwitchBool,
@@ -1699,6 +1784,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
     "ACE_OpenAI_GPT_Chat"       : "🅐 OpenAI GPT Chat",
     "ACE_OpenAI_GPT_TTS"        : "🅐 OpenAI GPT TTS",
+    "ACE_OpenAI_GPT_IMAGE"      : "🅐 OpenAI GPT IMAGE",
 
     "ACE_Expression_Eval"       : "🅐 Expression Eval",
     "ACE_AnyInputSwitchBool"    : "🅐 Any Input Switch (bool)",
