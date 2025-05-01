@@ -1566,15 +1566,16 @@ class ACE_OpenAI_GPT_IMAGE:
         print(f"GET OpenAI Key: {api_key}")
 
         output = []
+        params = {
+            "model": model,
+            "prompt": prompt,
+            "n": n,
+            "size": size,
+            "quality": quality,
+        }
 
         if image is None:
-            img = client.images.generate(
-                model=model,
-                prompt=prompt,
-                n=n,
-                size=size,
-                quality=quality,
-            )
+            img = client.images.generate(**params)
         else:
             image = image.permute([0,3,1,2])
             image_buf = []
@@ -1584,29 +1585,23 @@ class ACE_OpenAI_GPT_IMAGE:
                 im.save(buf, format="PNG")
                 buf.seek(0)
                 image_buf.append(("image.png", buf, "image/png"))
+            params["image"] = image_buf
 
-            mask = mask[0]
-            mask = mask.clamp(0, 1)
-            alpha = 1 - (mask * 255).byte().cpu().numpy()
-            h, w = alpha.shape
-            rgb = np.full((h, w, 3), 255, dtype=np.uint8)
-            rgba = np.dstack((rgb, alpha))
-            mask_pil = Image.fromarray(rgba, mode="RGBA")
-            
-            mask_buf = io.BytesIO()
-            mask_pil.save(mask_buf, format="PNG")
-            mask_buf.seek(0)
-            mask_buf = ("mask.png", mask_buf, "image/png")
-
-            img = client.images.edit(
-                model=model,
-                prompt=prompt,
-                n=n,
-                size=size,
-                quality=quality,
-                image=image_buf,
-                mask=mask_buf,
-            )
+            if mask is not None:
+                mask = mask[0]
+                mask = mask.clamp(0, 1)
+                alpha = 1 - (mask * 255).byte().cpu().numpy()
+                h, w = alpha.shape
+                rgb = np.full((h, w, 3), 255, dtype=np.uint8)
+                rgba = np.dstack((rgb, alpha))
+                mask_pil = Image.fromarray(rgba, mode="RGBA")
+                
+                mask_buf = io.BytesIO()
+                mask_pil.save(mask_buf, format="PNG")
+                mask_buf.seek(0)
+                mask_buf = ("mask.png", mask_buf, "image/png")
+                params["mask"] = mask_buf
+            img = client.images.edit(**params)
         
         for img_data in img.data:
             image_bytes = base64.b64decode(img_data.b64_json)
