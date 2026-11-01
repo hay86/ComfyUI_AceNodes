@@ -1460,7 +1460,6 @@ class ACE_OpenAI_GPT_Chat:
         import openai
         api_key = os.getenv("OPENAI_API_KEY")
         client = openai.OpenAI(api_key=api_key)
-        print(f"GET OpenAI Key: {api_key}")
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1516,7 +1515,6 @@ class ACE_OpenAI_GPT_TTS:
         import torchaudio
         api_key = os.getenv("OPENAI_API_KEY")
         client = openai.OpenAI(api_key=api_key)
-        print(f"GET OpenAI Key: {api_key}")
 
         with client.audio.speech.with_streaming_response.create(
             model=model,
@@ -1563,7 +1561,6 @@ class ACE_OpenAI_GPT_IMAGE:
         import io
         api_key = os.getenv("OPENAI_API_KEY")
         client = openai.OpenAI(api_key=api_key)
-        print(f"GET OpenAI Key: {api_key}")
 
         output = []
         params = {
